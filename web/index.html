@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Baserate — real recruiting funnels</title>
+  <meta name="description" content="Crowdsourced investment banking recruiting funnels. Contribute yours, see what actually converts.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="#/">Baserate</a>
+    <nav id="nav"></nav>
+  </header>
+
+  <main id="app" class="wrap"><p class="muted">Loading…</p></main>
+
+  <footer class="foot">
+    <span>Aggregates only. Cells with fewer than <span id="k-foot">5</span> people are hidden. Nothing identifies you.</span>
+    <span id="mode-badge"></span>
+  </footer>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="config.js"></script>
+  <script src="demo-backend.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
