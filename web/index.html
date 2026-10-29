@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Baserate — real recruiting funnels</title>
-  <meta name="description" content="Crowdsourced investment banking recruiting funnels. Contribute yours, see what actually converts.">
+  <title>Baserate — recruiting pipeline and base rates</title>
+  <meta name="description" content="Track every firm in your investment banking recruiting, and see what each coffee chat, event and referral is worth from anonymized pipelines.">
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -17,10 +18,10 @@
 
   <footer class="foot">
     <span>Aggregates only. Cells with fewer than <span id="k-foot">5</span> people are hidden. Nothing identifies you.</span>
-    <span id="mode-badge"></span>
+    <span class="foot-r"><span id="mode-badge"></span><a href="#/admin">Admin</a></span>
   </footer>
 
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
   <script src="config.js"></script>
   <script src="demo-backend.js"></script>
   <script src="app.js"></script>
