@@ -5,7 +5,7 @@
 // 3. Put {{ .Token }} in the Magic Link and Confirm signup email templates and set up
 //    custom SMTP (README, "Deploy for real"), or sign-in codes won't arrive.
 // 4. Set DEMO to false. (While DEMO is true the app runs entirely in the browser
-//    with synthetic data and any 6-digit code, so you can preview every screen.)
+//    with synthetic data and any 6–10 digit code, so you can preview every screen.)
 // ---------------------------------------------------------------------------
 window.BASERATE_CONFIG = {
   SUPABASE_URL: "",            // e.g. "https://abcdefghijklmnop.supabase.co"

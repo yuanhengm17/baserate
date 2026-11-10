@@ -38,7 +38,7 @@ page, "Enter admin mode" opens the review queue. Nothing is saved anywhere excep
 
 ## What a user sees
 
-* **Sign in**: school email → a 6-digit code arrives by email → type it in. There's no password and no
+* **Sign in**: school email → a sign-in code arrives by email → type it in. There's no password and no
   link, because school mail scanners (Microsoft Safe Links) open sign-in links first and use them up.
 * **Pipeline** (`#/pipeline`): a one-line summary, what needs attention (next steps, overdue items,
   firms slower than usual), a board with one card per firm by stage, and the last few actions. Click a
@@ -103,7 +103,7 @@ Sign-ups from non-school domains are rejected by a database trigger before the a
 exists. Edit the `allowed_domains` table if you need to add a domain.
 
 ### 2. Make sign-in emails carry a code
-Supabase's default emails contain a link. This app needs the 6-digit code instead.
+Supabase's default emails contain a link. This app needs the code instead.
 1. **Authentication → Emails → Templates**, edit both **Magic Link** and **Confirm signup**
    (new students get the second one). Set each subject to `Your Baserate sign-in code` and the body to:
    ```html
@@ -112,7 +112,7 @@ Supabase's default emails contain a link. This app needs the 6-digit code instea
    <p>It expires in one hour. If you didn't ask for it, ignore this email.</p>
    ```
 2. **Authentication → Providers → Email**: keep Email enabled. If there's an *Email OTP length*
-   setting, 6 is what the page suggests (it accepts 6–10 digits).
+   setting, the page accepts any length from 6 to 10 digits.
 3. **Authentication → URL Configuration**: set *Site URL* to where the site will live.
 
 ### 3. Set up an email sender (required)

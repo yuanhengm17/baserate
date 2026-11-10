@@ -58,7 +58,7 @@ The `track()` calls in `app.js` then do nothing. New user actions should call `t
    data. The one exception is `firm_notes`: private free text only its owner can read, never used in
    aggregates. (A shared contacts list is being designed; until it is approved, none exists.)
 9. Keep the front end vanilla HTML/CSS/JS. No framework, no bundler.
-10. Sign-in is a 6-digit email code (`signInWithOtp` + `verifyOtp` type `email`), not a link: school
+10. Sign-in is an emailed code (6–10 digits, set by Supabase's OTP length) (`signInWithOtp` + `verifyOtp` type `email`), not a link: school
     mail scanners consume links. The Supabase email templates must contain `{{ .Token }}`.
 
 ## Testing

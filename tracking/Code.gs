@@ -59,6 +59,9 @@ function buildReport() {
   const byDay = {};   // yyyy-mm-dd -> {visitors:Set, sessions:Set, events}
   const visitorSessions = {}; // visitor -> Set(sessions)
   const firmOpens = {};
+  // A session sends session_end each time its tab is hidden, with the running total, so
+  // only its largest value counts.
+  const sessionSeconds = {}; // session -> {src, seconds}
 
   data.forEach(r => {
     const ev = r[col("event")], src = r[col("src")] || "direct", v = r[col("visitor")], s = r[col("session")];
@@ -74,11 +77,15 @@ function buildReport() {
       st.firm_opens++;
       const f = safeJson_(r[col("detail")]).firm; if (f) firmOpens[f] = (firmOpens[f] || 0) + 1;
     }
-    if (ev === "session_end") { st.seconds += Number(safeJson_(r[col("detail")]).seconds || 0); st.ended++; }
+    if (ev === "session_end") {
+      const secs = Number(safeJson_(r[col("detail")]).seconds || 0), prev = sessionSeconds[s];
+      if (!prev || secs > prev.seconds) sessionSeconds[s] = {src, seconds: secs};
+    }
     const d = byDay[day] || (byDay[day] = {visitors:new Set(), sessions:new Set(), events:0});
     d.visitors.add(v); d.sessions.add(s); d.events++;
     (visitorSessions[v] || (visitorSessions[v] = new Set())).add(s);
   });
+  Object.values(sessionSeconds).forEach(x => { bySrc[x.src].seconds += x.seconds; bySrc[x.src].ended++; });
 
   let rep = ss.getSheetByName(REPORT_SHEET);
   if (!rep) rep = ss.insertSheet(REPORT_SHEET); else rep.clear();

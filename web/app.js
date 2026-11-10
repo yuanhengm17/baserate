@@ -7,7 +7,7 @@
 
   // ------------------------------------------------------------------ backend
   function SupabaseBackend() {
-    // Sign-in uses a 6-digit code typed into the page, not a link: school mail scanners
+    // Sign-in uses a code typed into the page, not a link: school mail scanners
     // (e.g. Microsoft Safe Links) open links before the student does and use them up.
     const sb = window.supabase.createClient(CFG.SUPABASE_URL, CFG.SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } });
     const rpc = async (fn, args) => { const { data, error } = await sb.rpc(fn, args || {}); if (error) throw new Error(error.message); return data; };
@@ -216,15 +216,15 @@
         <p class="lead">We sent a sign-in code to <strong>${esc(L.email)}</strong>. Type it here.</p>
         <form id="code-form" class="card narrow">
           <label class="field">Sign-in code
-            <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required autofocus placeholder="123456"></label>
+            <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6,10}" maxlength="10" required autofocus placeholder="Code from the email"></label>
           <div class="row" style="margin-top:12px"><button class="primary" type="submit">Sign in</button></div>
-          <div id="login-msg">${B.isDemo ? '<p class="small muted">Demo mode: any 6 digits work.</p>' : ''}</div>
+          <div id="login-msg">${B.isDemo ? '<p class="small muted">Demo mode: any 6 to 10 digits work.</p>' : ''}</div>
         </form>
         <p class="small muted">No email after a minute? Check spam, then <button class="link" id="resend">send a new code</button> or <button class="link" id="restart">use a different email</button>.</p>`;
     }
     return `
       <h1>Sign in</h1>
-      <p class="lead">Use your school email. We email you a 6-digit code; there is no password.</p>
+      <p class="lead">Use your school email. We email you a sign-in code; there is no password.</p>
       <form id="login" class="card narrow">
         <label class="field">School email
           <input type="email" name="email" required value="${esc(L?.email || '')}" placeholder="you@${esc(CFG.ALLOWED_DOMAIN_HINT || 'college.harvard.edu')}" autocomplete="email"></label>
@@ -247,7 +247,7 @@
       cf.onsubmit = async (e) => {
         e.preventDefault();
         const btn = $('button', cf); btn.disabled = true;
-        try { await B.verifyCode(S.login.email, new FormData(cf).get('code').trim()); track('login', {}); S.login = null; location.hash = S.next || '#/pipeline'; S.next = null; await render(); }
+        try { await B.verifyCode(S.login.email, new FormData(cf).get('code').trim()); if (EV) EV.setEmail(S.login.email); track('login', {}); S.login = null; location.hash = S.next || '#/pipeline'; S.next = null; await render(); }
         catch (err) { msg(err.message); btn.disabled = false; }
       };
       $('#resend').onclick = () => send(S.login.email);
