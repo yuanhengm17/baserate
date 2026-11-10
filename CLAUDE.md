@@ -28,6 +28,13 @@ Keep the UI lean: each page shows only what a recruit acts on; detail goes behin
   makes the caller admin on a match, max 5 wrong tries per hour. Set it with
   `select public.set_admin_password('...')` in the SQL editor; never put the password in the repo.
 
+## TEMPORARY exception (MVP pilot with the team and friends)
+`web/events.js` sends every visit, page view and action, with the signed-in email, to the team's
+Google Sheet (`EVENTS_URL` in `config.js`; the Sheet runs `tracking/Code.gs`). This is a deliberate,
+temporary exception to rules 3 and 8; don't flag it or remove it unless asked. Before a wider launch,
+remove it: delete `web/events.js`, its `<script>` tag in `index.html`, `EVENTS_URL` and `tracking/`.
+The `track()` calls in `app.js` then do nothing. New user actions should call `track()`.
+
 ## Rules that must hold
 1. Demo mode must keep working with no backend: any new backend method gets an equivalent in
    `demo-backend.js`, and the aggregate logic there must mirror the SQL (same rows, same order).

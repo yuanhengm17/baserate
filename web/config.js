@@ -12,4 +12,7 @@ window.BASERATE_CONFIG = {
   SUPABASE_ANON_KEY: "",       // the long "anon public" key — safe to ship in the browser
   DEMO: true,
   ALLOWED_DOMAIN_HINT: "college.harvard.edu",
+  // TEMPORARY (MVP pilot): the team's Google Apps Script web-app URL (tracking/Code.gs).
+  // Every visit and action, with the signed-in email, is logged to that Sheet. "" turns it off.
+  EVENTS_URL: "https://script.google.com/macros/s/AKfycbzPYtlUizNEm_B6boAOhgHXgf4VpXiFbJdIrP87GLIAaeawcT4eKpH5LQH7HqT5XzL5/exec",
 };

@@ -19,9 +19,11 @@ baserate/
 │   ├── app.js           routes, pipeline, dashboard, odds, admin; talks to Supabase
 │   ├── demo-backend.js  synthetic in-browser data for previews (DEMO mode)
 │   ├── styles.css
+│   ├── events.js        TEMPORARY pilot event log to a Google Sheet
 │   ├── favicon.svg
 │   ├── _redirects       Netlify short links (/tt, /dm, /rc) that add a ?src= tag
 │   └── config.js        ← paste your Supabase URL + anon key here
+├── tracking/Code.gs     Apps Script for that Sheet (logger + report)
 └── supabase/
     ├── schema.sql       tables, auth domain restriction, RLS, flags, aggregate RPCs
     └── seed_firms.sql   ~45 IB firms by tier
@@ -154,6 +156,16 @@ untagged link from another site is saved as `ref:<site>`). "Where sign-ups come 
 page counts, per tag, how many signed up, started a pipeline, are logging now, finished and were
 approved. Counts only; no per-person view. On Netlify, `/tt`, `/dm` and `/rc` redirect to the TikTok
 tags.
+
+### Pilot event log (temporary)
+While the pilot is just the team and friends, `web/events.js` posts every visit, page view and action
+(with a browser visitor ID, the `?src=` tag, and the email once signed in) to a Google Sheet. The
+footer tells visitors. To set up your own Sheet: make a new Google Sheet, open **Extensions → Apps
+Script**, paste in `tracking/Code.gs`, then **Deploy → New deployment → Web app** (execute as *Me*,
+access *Anyone*). Paste the `/exec` URL into `EVENTS_URL` in `web/config.js`. In the Sheet,
+**Baserate → Refresh report** builds per-source totals. The admin page's "Event log" fold shows what
+this browser sent and can reset your visitor ID after testing. Set `EVENTS_URL` to `""` to stop
+logging; delete `events.js` and `tracking/` to remove it.
 
 ### Settings (`app_settings`)
 | key | default | meaning |

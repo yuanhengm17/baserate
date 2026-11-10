@@ -87,6 +87,12 @@
     $('#app').before(n);
   }
 
+  // TEMPORARY pilot event log to the team's Google Sheet (events.js). Does nothing if that
+  // file is removed.
+  const EV = window.BaserateEvents;
+  const track = (event, detail) => { try { if (EV) EV.send(event, detail || {}); } catch {} };
+  if (EV?.connected) $('#events-foot').textContent = 'During the pilot we also log page activity, with your email once you sign in, to a private team sheet.';
+
   // ------------------------------------------------------------------ where visitors come from
   // The ?src= tag on the first link someone used (e.g. ?src=sidechat), or the other site that
   // linked here. Kept in this browser until they sign in, then saved on the account once.
@@ -108,6 +114,7 @@
   async function refresh() {
     S.session = await B.getSession();
     if (S.session) sendSource();
+    if (EV) EV.setEmail(S.session?.user?.email);
     S.status = S.session ? await B.myStatus() : null;
     // settings are readable only when signed in; until then the defaults apply
     if (!S.settings && S.session) S.settings = await B.getSettings().catch(() => null);
@@ -230,7 +237,7 @@
     const msg = (t) => { $('#login-msg').innerHTML = `<div class="notice bad small">${esc(t)}</div>`; };
     const send = async (email, btn) => {
       if (btn) btn.disabled = true;
-      try { await B.signIn(email); S.login = { email, sent: true }; await render(); }
+      try { await B.signIn(email); track('signup_start', {}); S.login = { email, sent: true }; await render(); }
       catch (err) { msg(err.message); if (btn) btn.disabled = false; }
     };
     const lf = $('#login');
@@ -240,7 +247,7 @@
       cf.onsubmit = async (e) => {
         e.preventDefault();
         const btn = $('button', cf); btn.disabled = true;
-        try { await B.verifyCode(S.login.email, new FormData(cf).get('code').trim()); S.login = null; location.hash = S.next || '#/pipeline'; S.next = null; await render(); }
+        try { await B.verifyCode(S.login.email, new FormData(cf).get('code').trim()); track('login', {}); S.login = null; location.hash = S.next || '#/pipeline'; S.next = null; await render(); }
         catch (err) { msg(err.message); btn.disabled = false; }
       };
       $('#resend').onclick = () => send(S.login.email);
@@ -461,6 +468,7 @@
       const fd = new FormData(f);
       try {
         await B.addTouchpoint({ submission_firm_id: +fd.get('sfid'), kind: fd.get('kind'), occurred_on: fd.get('occurred_on') || null, ...readPerson(f, fd.get('kind')) });
+        track('contribute', { firm: S.pipe.rows.find((x) => x.id === +fd.get('sfid'))?.label, kind: fd.get('kind') });
         dlg.close(); await render();
       } catch (err) { $('#action-msg', f).textContent = err.message; }
     };
@@ -471,7 +479,7 @@
     if (setup) {
       setup.onsubmit = async (e) => {
         e.preventDefault();
-        try { await B.upsertPipeline(readProfile(setup)); await render(); } catch (err) { $('#setup-msg').textContent = err.message; }
+        try { await B.upsertPipeline(readProfile(setup)); track('signup_complete', { via: 'pipeline' }); await render(); } catch (err) { $('#setup-msg').textContent = err.message; }
       };
       return;
     }
@@ -483,7 +491,10 @@
         e.preventDefault();
         const isOther = sel.value === 'other';
         if (isOther && !other.value.trim()) { $('#add-firm-msg').textContent = 'Type the firm name.'; return; }
-        try { await B.saveFirm({ firm_id: isOther ? null : +sel.value, firm_name_other: isOther ? other.value.trim() : null }); await render(); }
+        try {
+          await B.saveFirm({ firm_id: isOther ? null : +sel.value, firm_name_other: isOther ? other.value.trim() : null });
+          track('tracker_add', { firm: isOther ? other.value.trim() : sel.selectedOptions[0].text, via: 'pipeline' }); await render();
+        }
         catch (err) { $('#add-firm-msg').textContent = err.message; }
       };
     }
@@ -491,16 +502,17 @@
     const logAny = $('#log-any'); if (logAny) logAny.onclick = () => { const d = $('#log-dlg'); d.innerHTML = `<div class="dlg-h"><h2>Log an action</h2><button class="link" id="close-log" aria-label="Close">✕</button></div>${actionForm(null)}`; $('#close-log').onclick = () => d.close(); wireActionForm(d); d.showModal(); };
     const reopen = $('#reopen'); if (reopen) reopen.onclick = async () => { await B.reopen(); await render(); };
     $('#share-toggle').onchange = async (e) => { await B.setShareOutreach(e.target.checked); await refresh(); };
-    $('#delete-pipeline').onclick = async () => { if (confirm('Delete your whole pipeline? This cannot be undone.')) { await B.deletePipeline(); await render(); } };
+    $('#delete-pipeline').onclick = async () => { if (confirm('Delete your whole pipeline? This cannot be undone.')) { await B.deletePipeline(); track('delete_pipeline', {}); await render(); } };
     const pf = $('#profile-form'); if (pf) pf.onsubmit = async (e) => { e.preventDefault(); try { await B.upsertPipeline(readProfile(pf)); $('#profile-msg').textContent = 'Saved.'; await refresh(); } catch (err) { $('#profile-msg').textContent = err.message; } };
     const ff = $('#finalize-form'); if (ff) ff.onsubmit = async (e) => {
       e.preventDefault();
-      try { await B.finalize(new FormData(ff).get('outcome')); await render(); } catch (err) { $('#finalize-msg').textContent = err.message; }
+      try { await B.finalize(new FormData(ff).get('outcome')); track('finalize', { outcome: new FormData(ff).get('outcome') }); await render(); } catch (err) { $('#finalize-msg').textContent = err.message; }
     };
     const live = S.status?.status === 'in_progress';
     const openFirm = (o) => {
       const r = S.pipe.rows.find((x) => String(x.id) === o.dataset.openFirm); if (!r) return;
       const d = $('#firm-dlg'); d.innerHTML = firmDialog(r); wireFirmDialog(d, r); d.showModal();
+      track('firm_open', { firm: r.label });
     };
     $('#app').onkeydown = (e) => { const o = e.target.closest('.fcard[data-open-firm]'); if (o && live && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openFirm(o); } };
     $('#app').onclick = async (e) => {
@@ -542,13 +554,14 @@
       if (n.application_url && !/^https?:\/\//i.test(n.application_url)) { $('#firm-msg', dlg).textContent = 'Links must start with http:// or https://'; return; }
       try {
         await B.saveFirm(row);
+        track('tracker_status', { firm: r.label, stage: stageOf(row) });
         if ((n.application_url || null) !== (r.application_url || null) || (n.notes || null) !== (r.notes || null)) await B.saveNotes(r.id, n);
         dlg.close(); await render();
       } catch (err) { $('#firm-msg', dlg).textContent = err.message; }
     };
     $('#rm-firm', dlg).onclick = async () => {
       if (!confirm(`Remove ${r.label} and every action logged there?`)) return;
-      await B.deleteFirm(r.id); dlg.close(); await render();
+      await B.deleteFirm(r.id); track('tracker_remove', { firm: r.label }); dlg.close(); await render();
     };
     wireActionForm(dlg);
   }
@@ -666,6 +679,8 @@
           for (const a of r.actions) await B.addTouchpoint({ ...a, submission_firm_id: id });
         }
         await B.finalize(new FormData(form).get('outcome'));
+        track('contribute', { via: 'whole_cycle', firms: rows.length });
+        track('signup_complete', { via: 'whole_cycle' });
         location.hash = '#/pipeline';
       } catch (err) { msg.textContent = err.message + ' What was saved so far is on your pipeline page.'; btn.disabled = false; }
     };
@@ -728,7 +743,7 @@
     const more = $('#timing-more');
     if (more) more.onclick = () => { document.querySelectorAll('#timing-table tr.more').forEach((tr) => { tr.hidden = false; }); more.remove(); };
     const of = $('#outreach-firm');
-    if (of) of.onchange = () => { $('#outreach-box').innerHTML = replyList(S.dash.outreach.filter((r) => (of.value ? r.firm_id === +of.value : r.firm_id == null))); };
+    if (of) of.onchange = () => { track('filter', { outreach_firm: of.selectedOptions[0].text }); $('#outreach-box').innerHTML = replyList(S.dash.outreach.filter((r) => (of.value ? r.firm_id === +of.value : r.firm_id == null))); };
   }
 
   // ------------------------------------------------------------------ my odds
@@ -769,6 +784,7 @@
     }
     let m, list, sources; try { [m, list, sources] = await Promise.all([B.adminMetrics(), B.adminList(), B.adminSources()]); } catch (e) { return `<div class="notice bad">${esc(e.message)}</div>`; }
     const auto = (S.settings?.auto_approve || 'false') === 'true';
+    const ev = EV?.info();
     const flagLabel = { fewer_than_3_applications: '<3 applications', no_rejections: 'no rejections', offer_rate_above_60pct: 'offer rate >60%', stage_without_previous_stage: 'stage order', stage_dates_out_of_order: 'dates out of order', implausible_coffee_chats: 'chats implausible' };
     return `
       <div class="page-h"><h1>Review queue</h1><span class="muted">${m.n_pending} pending · ${m.n_approved} approved · ${m.n_active} people logging now</span></div>
@@ -785,6 +801,13 @@
       </div>
       <p class="small muted">Use a different tag for every place you post (sidechat, hfac_groupchat, peer_yourname…). Lowercase letters, digits, - and _ only.</p>
       </details>
+      ${ev ? `<details class="card"><summary><strong>Event log (this browser)</strong></summary>
+        <p class="small">${EV.connected ? 'Sending to the Google Sheet.' : 'Not sending: EVENTS_URL in config.js is empty, so events stay in this browser.'}
+          Visitor <code>${esc(ev.visitor)}</code> · source <code>${esc(ev.src)}</code> · ${ev.visits} visit${ev.visits === 1 ? '' : 's'} on this device.</p>
+        <div class="table-scroll"><table class="lean"><thead><tr><th>Time</th><th>Event</th><th>Detail</th></tr></thead>
+          <tbody>${ev.log.slice(0, 30).map((r) => `<tr><td class="small">${esc(new Date(r.ts).toLocaleString())}</td><td>${esc(r.event)}</td><td class="small muted">${esc(JSON.stringify(r.detail))}</td></tr>`).join('') || '<tr><td colspan="3" class="muted">No events yet.</td></tr>'}</tbody></table></div>
+        <p class="small"><button type="button" id="ev-reset">Reset my visitor ID</button> <span class="muted">This device then counts as a new visitor. Use it after testing, then delete your test rows in the Sheet.</span></p>
+      </details>` : ''}
       <div class="toolbar">
         <button id="approve-clean">Approve all unflagged</button>
         <label class="check"><input type="checkbox" id="auto-approve" ${auto ? 'checked' : ''}> Auto-approve unflagged cycles</label>
@@ -820,6 +843,7 @@
       return;
     }
     const leave = $('#leave-admin'); if (leave) leave.onclick = () => { B.leaveAdmin(); location.hash = '#/'; };
+    const evr = $('#ev-reset'); if (evr) evr.onclick = () => { EV.reset(); evr.disabled = true; evr.textContent = 'Reset. Reload to start as a new visitor.'; };
     const tag = $('#src-tag'), link = $('#src-link');
     const build = () => { const t = cleanSrc(tag.value.trim().replace(/\s+/g, '_')).replace(/[.:]/g, ''); link.value = location.origin + location.pathname + (t ? '?src=' + t : ''); };
     tag.oninput = build; build();
@@ -854,7 +878,7 @@
     if (route === '#/submit' && S.status?.has_submission) route = '#/pipeline';
     const locked = (route === '#/dashboard' || route === '#/odds') && !S.status?.has_access;
     renderNav(locked ? '#/dashboard' : route);
-    if (locked) app.innerHTML = viewLocked();
+    if (locked) { app.innerHTML = viewLocked(); track('gate_seen', { page: route.slice(2) }); }
     else if (route === '#/login') { app.innerHTML = viewLogin(); wireLogin(); }
     else if (route === '#/submit') {
       if (!S.firms) S.firms = await B.getFirms();
@@ -867,7 +891,7 @@
       app.onclick = async (e) => {
         const b = e.target.closest('[data-add-firm]'); if (!b) return;
         b.disabled = true;
-        try { await B.saveFirm({ firm_id: +b.dataset.addFirm, firm_name_other: null }); await render(); } catch (err) { b.textContent = err.message; }
+        try { await B.saveFirm({ firm_id: +b.dataset.addFirm, firm_name_other: null }); track('tracker_add', { firm: b.closest('.odd')?.querySelector('strong')?.textContent, via: 'odds' }); await render(); } catch (err) { b.textContent = err.message; }
       };
     }
     else if (route === '#/dashboard') { app.innerHTML = await viewDashboard(); wireDashboard(); }
