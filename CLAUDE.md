@@ -21,6 +21,8 @@ Keep the UI lean: each page shows only what a recruit acts on; detail goes behin
 - `touchpoints` = one row per action at a firm. Contacts are described only by coarse categories
   (`contact_level`, `connection`, `found_via`); there are no free-text fields.
 - `pipeline_activity` = days a person logged something; drives "actively logging" access.
+- `profiles.signup_source` = the `?src=` tag (or `ref:<host>`) of the first link a person used, saved
+  once by `set_my_source()` on a new account. Admins see it only as counts (`admin_sources()`).
 - `firm_notes` = the owner's private free-text notes and application link per firm. Owner-only RLS.
 - `admin_secret` / `admin_unlock_attempts` = salted SHA-256 of the admin password; `unlock_admin()`
   makes the caller admin on a match, max 5 wrong tries per hour. Set it with

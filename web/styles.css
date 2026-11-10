@@ -160,3 +160,20 @@ section.card { margin: 16px 0; }
 }
 .config-missing { max-width: 960px; margin: 12px auto 0; }
 .foot-r { display: inline-flex; gap: 12px; }
+
+/* Landing: how give-to-get works */
+.how { list-style: none; counter-reset: how; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; max-width: 820px; margin: 44px 0 14px; padding: 0; text-align: left; }
+.how li { counter-increment: how; display: grid; gap: 4px; align-content: start; background: var(--surface); border: 1px solid var(--hair); border-radius: var(--radius); padding: 14px 16px; font-size: 14px; color: var(--ink-2); }
+.how li::before { content: counter(how); font-weight: 700; color: var(--accent-ink); }
+.how strong { color: var(--ink); font-size: 15px; }
+
+/* Locked preview: blurred placeholder with the way in on top */
+.locked { position: relative; }
+.locked .blur { filter: blur(6px); user-select: none; }
+.gate { position: absolute; inset: 0; display: grid; place-items: start center; padding: 48px 0; }
+.gate .card { max-width: 440px; text-align: center; box-shadow: 0 20px 40px -20px rgb(0 0 0 / .35); }
+.gate .card h2 { font-size: 20px; }
+
+@media (max-width: 640px) {
+  .how { grid-template-columns: 1fr; }
+}

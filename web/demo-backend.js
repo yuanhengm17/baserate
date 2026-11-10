@@ -116,6 +116,11 @@
   DB.submissions.push(fake);
   // other people's live pipelines: only counted on the admin page, never shown
   DB.live = Array.from({ length: 14 }, (_, i) => ({ lastActive: addDays(today(), -(i < 10 ? between(0, 20) : between(35, 80))) }));
+  // source tags for the admin funnel; assigned by index so the synthetic data above doesn't change
+  const SOURCES = ['sidechat', 'hfac_pitch', 'tiktok_typed', 'reddit', null];
+  DB.submissions.forEach((s, i) => { s.source = SOURCES[i % 5]; });
+  DB.live.forEach((p, i) => { p.source = SOURCES[(i + 2) % 5]; });
+  DB.idle = Array.from({ length: 23 }, (_, i) => ({ source: SOURCES[(i * 3) % 5] }));   // signed up, never started
 
   const LS = 'baserate_demo_me_v2';
   const me = () => { try { return JSON.parse(localStorage.getItem(LS) || 'null'); } catch { return null; } };
@@ -306,7 +311,12 @@
     onAuthChange(cb) { this._cb = cb; },
     // mirrors the real flow: request a code, then type it in (any 6–10 digits in the demo)
     async signIn(email) { if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address.'); return { sent: true }; },
-    async verifyCode(email, code) { if (!/^\d{6,10}$/.test(code)) throw new Error('That code is wrong or has expired. Request a new one.'); setMe({ email, activity: [] }); this._cb && this._cb(); },
+    async verifyCode(email, code) { if (!/^\d{6,10}$/.test(code)) throw new Error('That code is wrong or has expired. Request a new one.'); setMe({ email, activity: [], createdAt: Date.now() }); this._cb && this._cb(); },
+    // mirrors set_my_source(): once, and only on an account made in the last day
+    async setMySource(src) {
+      const m = me(); const v = String(src || '').toLowerCase().replace(/[^a-z0-9_.:-]/g, '').slice(0, 60);
+      if (m && v && !m.source && Date.now() - (m.createdAt || 0) < 864e5) { m.source = v; setMe(m); }
+    },
     async signOut() { setMe(null); this._cb && this._cb(); },
     async getFirms() { return FIRMS; },
     async getSettings() { return { ...DB.settings }; },
@@ -406,6 +416,24 @@
         median_firms: median(fin.map((s) => s.rows.length)),
         n_sharing_outreach: fin.filter((s) => s.share_outreach).length,
       };
+    },
+    // mirrors admin_sources()
+    async adminSources() {
+      const m = me(); if (!m?.admin) return [];
+      const since = addDays(today(), -setting('active_window_days', 30));
+      const mine = mySub();
+      const people = [
+        ...DB.submissions.map((s) => ({ source: s.source, status: s.status, active: false })),
+        ...DB.live.map((p) => ({ source: p.source, status: 'in_progress', active: p.lastActive > since })),
+        ...DB.idle.map((p) => ({ source: p.source, status: null, active: false })),
+        { source: m.source, status: mine ? mine.status : null, active: !!mine && isActiveLogger() },
+      ];
+      return [...groupBy(people, (p) => p.source || 'untagged').entries()].map(([source, ps]) => ({
+        source, n_signed_up: ps.length, n_started: ps.filter((p) => p.status).length,
+        n_active: ps.filter((p) => p.status === 'in_progress' && p.active).length,
+        n_finished: ps.filter((p) => ['pending', 'approved', 'rejected'].includes(p.status)).length,
+        n_approved: ps.filter((p) => p.status === 'approved').length,
+      })).sort((a, b) => b.n_signed_up - a.n_signed_up || cmpC(a.source, b.source));
     },
     async adminSetSetting(key, value) { DB.settings[key] = value; },
     // Mirrors unlock_admin(). In the demo this is cosmetic: the check runs in the browser.

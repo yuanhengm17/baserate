@@ -67,6 +67,11 @@ create table if not exists public.profiles (
   is_admin   boolean not null default false,
   created_at timestamptz not null default now()
 );
+-- Where the person came from: the ?src= tag on the first link they used (e.g. 'sidechat'),
+-- or 'ref:<host>' for an untagged link from another site. Set once by set_my_source();
+-- admins see it only as counts per source (admin_sources).
+alter table public.profiles add column if not exists signup_source text
+  check (signup_source ~ '^[a-z0-9_.:-]{1,60}$');
 
 create or replace function public.handle_new_user()
 returns trigger
@@ -909,6 +914,52 @@ as $$
    where public.is_admin();
 $$;
 
+-- Record the caller's source tag. Only on a new account (first day) and only once, so a
+-- later visit through some other link doesn't rewrite where they came from.
+create or replace function public.set_my_source(p_src text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v text := left(regexp_replace(lower(coalesce(p_src, '')), '[^a-z0-9_.:-]', '', 'g'), 60);
+begin
+  if v = '' then return; end if;
+  update public.profiles set signup_source = v
+   where user_id = auth.uid() and signup_source is null
+     and created_at > now() - interval '1 day';
+end;
+$$;
+
+-- Sign-up funnel per source tag, for the admin page. Counts only.
+create or replace function public.admin_sources()
+returns table (source text, n_signed_up int, n_started int, n_active int, n_finished int, n_approved int)
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with active as (
+    select user_id from public.pipeline_activity
+     where active_on > current_date - public.setting_int('active_window_days', 30)
+     group by user_id having count(*) >= public.setting_int('active_min_days', 1)),
+       per as (
+    select coalesce(p.signup_source, 'untagged') as source, p.user_id, s.status
+      from public.profiles p
+      left join public.submissions s on s.user_id = p.user_id)
+  select source,
+         count(*)::int,
+         count(status)::int,
+         count(*) filter (where status = 'in_progress' and user_id in (select user_id from active))::int,
+         count(*) filter (where status in ('pending', 'approved', 'rejected'))::int,
+         count(*) filter (where status = 'approved')::int
+    from per
+   where public.is_admin()
+   group by source
+   order by count(*) desc, source collate "C";
+$$;
+
 -- Admin password: a signed-in user who enters it becomes admin. Checked server-side
 -- against a salted hash nobody can read; 5 wrong tries per hour per account.
 -- Set or change it in the SQL editor: select public.set_admin_password('...');
@@ -987,6 +1038,8 @@ grant execute on function public.admin_submissions()             to authenticate
 grant execute on function public.admin_set_status(uuid, text, text) to authenticated;
 grant execute on function public.admin_metrics()                 to authenticated;
 grant execute on function public.unlock_admin(text)              to authenticated;
+grant execute on function public.set_my_source(text)             to authenticated;
+grant execute on function public.admin_sources()                 to authenticated;
 
 grant usage on schema public to authenticated;
 grant select on public.firms, public.app_settings, public.profiles, public.submissions,

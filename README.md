@@ -19,6 +19,8 @@ baserate/
 │   ├── app.js           routes, pipeline, dashboard, odds, admin; talks to Supabase
 │   ├── demo-backend.js  synthetic in-browser data for previews (DEMO mode)
 │   ├── styles.css
+│   ├── favicon.svg
+│   ├── _redirects       Netlify short links (/tt, /dm, /rc) that add a ?src= tag
 │   └── config.js        ← paste your Supabase URL + anon key here
 └── supabase/
     ├── schema.sql       tables, auth domain restriction, RLS, flags, aggregate RPCs
@@ -48,9 +50,12 @@ page, "Enter admin mode" opens the review queue. Nothing is saved anywhere excep
     or one firm);
   - how long firms take (typical days to a first round or rejection, and the months first rounds
     happen).
+* **Locked preview.** Without access, "What works" and "My odds" show a blurred placeholder (fixed
+  text, not data) with one step to unlock: sign up, start a pipeline, log something, or wait for review.
 * **My odds** (`#/odds`): the firms where students with your profile reach first rounds at twice the
   usual rate, with the best kind of contact to try there and a button to add the firm to your
-  pipeline. The full list is folded away underneath.
+  pipeline. The full list is folded away underneath. The same rate shows when you open a firm on
+  your pipeline.
 
 ## Privacy and access rules
 
@@ -140,6 +145,15 @@ pipelines, outreach logs or notes. To remove a test pipeline, use
 ```sql
 delete from public.submissions where user_id = (select user_id from public.profiles where email = 'you@college.harvard.edu');
 ```
+
+### Measure where sign-ups come from
+Add `?src=<tag>` to every link you post, one tag per place (`?src=sidechat`, `?src=hfac_groupchat`,
+`?src=peer_yourname`). The admin page has a link builder. The first tag a visitor arrives with is
+kept in their browser and saved on their account when they sign up (`profiles.signup_source`; an
+untagged link from another site is saved as `ref:<site>`). "Where sign-ups come from" on the admin
+page counts, per tag, how many signed up, started a pipeline, are logging now, finished and were
+approved. Counts only; no per-person view. On Netlify, `/tt`, `/dm` and `/rc` redirect to the TikTok
+tags.
 
 ### Settings (`app_settings`)
 | key | default | meaning |

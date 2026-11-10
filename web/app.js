@@ -70,6 +70,8 @@
       async adminMetrics() { return one(await rpc('admin_metrics')); },
       async unlockAdmin(password) { return rpc('unlock_admin', { p_password: password }); },
       async adminSetSetting(key, value) { ok(await sb.from('app_settings').update({ value }).eq('key', key)); },
+      async adminSources() { return rpc('admin_sources'); },
+      async setMySource(src) { return rpc('set_my_source', { p_src: src }); },
     };
   }
 
@@ -85,10 +87,27 @@
     $('#app').before(n);
   }
 
+  // ------------------------------------------------------------------ where visitors come from
+  // The ?src= tag on the first link someone used (e.g. ?src=sidechat), or the other site that
+  // linked here. Kept in this browser until they sign in, then saved on the account once.
+  const SRC_KEY = 'baserate_src';
+  const cleanSrc = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9_.:-]/g, '').slice(0, 60);
+  try {
+    const q = new URLSearchParams(location.search);
+    let ref = ''; try { ref = document.referrer ? new URL(document.referrer).hostname : ''; } catch {}
+    const src = cleanSrc(q.get('src') || q.get('utm_source')) || (ref && ref !== location.hostname ? cleanSrc('ref:' + ref) : '');
+    if (src && !localStorage.getItem(SRC_KEY)) localStorage.setItem(SRC_KEY, src);
+  } catch {}
+  function sendSource() {
+    let src = null; try { src = localStorage.getItem(SRC_KEY); localStorage.removeItem(SRC_KEY); } catch {}
+    if (src) B.setMySource(src).catch(() => {});
+  }
+
   // ------------------------------------------------------------------ state
   const S = { session: null, status: null, firms: null, settings: null, login: null };
   async function refresh() {
     S.session = await B.getSession();
+    if (S.session) sendSource();
     S.status = S.session ? await B.myStatus() : null;
     // settings are readable only when signed in; until then the defaults apply
     if (!S.settings && S.session) S.settings = await B.getSettings().catch(() => null);
@@ -124,10 +143,12 @@
     const a = (href, label) => `<a href="${href}" class="${route === href ? 'active' : ''}">${label}</a>`;
     if (S.session) {
       links.push(a('#/pipeline', 'Pipeline'));
-      if (S.status?.has_access) { links.push(a('#/dashboard', 'What works')); links.push(a('#/odds', 'My odds')); }
+      links.push(a('#/dashboard', 'What works'));
+      if (S.status?.has_access) links.push(a('#/odds', 'My odds'));
       if (S.status?.is_admin) links.push(a('#/admin', 'Admin'));
       links.push(`<button id="signout" class="link">Sign out</button>`);
     } else {
+      links.push(a('#/dashboard', 'What works'));
       links.push(a('#/login', 'Sign in'));
     }
     $('#nav').innerHTML = links.join('');
@@ -143,7 +164,41 @@
         ${S.session ? '<a class="btn primary big" href="#/pipeline">Open my pipeline</a>'
           : '<a class="btn primary big" href="#/login">Sign up with your school email</a>'}
         ${S.session ? '' : '<p class="land-alt"><a href="#/submit">Already done recruiting? Add your cycle</a></p>'}
+        <ol class="how">
+          <li><strong>Track your pipeline</strong><span>Add each firm and log coffee chats, outreach and events as they happen.</span></li>
+          <li><strong>Give a little</strong><span>Log something in the last ${esc(S.settings?.active_window_days || 30)} days, or add your finished cycle once.</span></li>
+          <li><strong>Get the base rates</strong><span>Which actions came before first rounds, who replies, how long each firm takes, and your odds.</span></li>
+        </ol>
+        <p class="small"><a href="#/dashboard">Preview what you unlock</a></p>
       </section>`;
+  }
+
+  // Give-to-get: without access, "What works" and "My odds" show a blurred stand-in and how to
+  // unlock it. The stand-in is fixed placeholder text, not data; nothing is fetched.
+  function viewLocked() {
+    const st = S.status || {};
+    const [title, text, href, cta] =
+      !S.session ? ['See what actually gets people interviews', 'Sign up with your school email and start your pipeline. That unlocks this page.', '#/login', 'Sign up with your school email']
+      : !st.has_submission ? ['Start your pipeline to unlock this', 'A few questions about your profile, about a minute. Anyone tracking their recruiting here sees the numbers.', '#/pipeline', 'Start my pipeline']
+      : st.status === 'pending' ? ['Unlocks when your cycle is approved', 'Your finished cycle is in review. Once it is approved, this opens and stays open.', '#/pipeline', 'Open my pipeline']
+      : st.status === 'rejected' ? ['Your cycle needs a fix', 'Reopen your pipeline, fix it, and keep logging to see the numbers.', '#/pipeline', 'Open my pipeline']
+      : ['Log something to unlock this', `Add a firm or log an action. Anyone who logged something in the last ${esc(S.settings?.active_window_days || 30)} days sees the numbers.`, '#/pipeline', 'Open my pipeline'];
+    const fake = [41, 34, 29, 26, 22, 19];
+    return `
+      <div class="page-h"><h1>What works</h1></div>
+      <div class="locked">
+        <div class="blur" aria-hidden="true" inert>
+          <section class="card"><h2>Which actions help</h2>
+            <table class="lean"><tbody>${Object.values(ACTION).map((l, i) => `<tr><td>${esc(l)}</td><td class="num">${fake[i]}%</td><td class="num">${fake[5 - i]}%</td></tr>`).join('')}</tbody></table></section>
+          <section class="card"><h2>Who replies to outreach</h2>
+            ${Object.values(CONN).map((l, i) => `<div class="rate"><span>${esc(l)}</span><div class="track"><div class="fill" style="width:${70 - i * 15}%"></div></div><span class="v">${70 - i * 15}%</span></div>`).join('')}</section>
+        </div>
+        <div class="gate"><div class="card">
+          <h2>${title}</h2>
+          <p class="small muted">${text}</p>
+          <a class="btn primary" href="${href}">${cta}</a>
+        </div></div>
+      </div>`;
   }
 
   function viewLogin() {
@@ -284,8 +339,9 @@
         </form>
         <p class="small muted">Already done recruiting? <a href="#/submit">Add your whole cycle at once</a>.</p>`;
     }
-    const [rows, touches, timing] = await Promise.all([B.myPipeline(), B.myTouchpoints(), st.has_access ? B.timing().catch(() => []) : []]);
-    S.pipe = { rows, touches };
+    const [rows, touches, timing, odds] = await Promise.all([B.myPipeline(), B.myTouchpoints(),
+      st.has_access ? B.timing().catch(() => []) : [], st.has_access ? B.myOdds().catch(() => []) : []]);
+    S.pipe = { rows, touches, odds: new Map(odds.filter((o) => o.rate != null).map((o) => [o.firm_id, o])) };
     const live = st.status === 'in_progress';
     const firmLabel = Object.fromEntries(rows.map((r) => [r.id, r.label]));
     const count = (s) => rows.filter((r) => stageOf(r) === s).length;
@@ -358,9 +414,11 @@
   function firmDialog(r) {
     const tps = S.pipe.touches.filter((t) => t.submission_firm_id === r.id);
     const stage = (name, label, dateName) => `<div class="stage-row"><label class="check"><input type="checkbox" name="${name}" ${r[name] ? 'checked' : ''}> ${label}</label>${dateName ? `<input type="date" name="${dateName}" value="${esc(r[dateName] || '')}" max="${todayISO()}">` : ''}</div>`;
+    const o = S.pipe.odds.get(r.firm_id);
     return `
       <form id="firm-form" method="dialog">
         <div class="dlg-h"><h2>${esc(r.label)}</h2><button class="link" value="cancel" formnovalidate aria-label="Close">✕</button></div>
+        ${o ? `<p class="small">First-round rate here: <strong>${fmtPct(o.rate)}</strong> <span class="muted">(based on ${esc(o.basis)}; your average across firms is ${fmtPct(o.avg_rate)})</span></p>` : ''}
         ${stage('applied', 'Applied', 'applied_on')}${stage('first_round', 'First round', 'first_round_on')}${stage('superday', 'Superday', 'superday_on')}${stage('offer', 'Offer', 'offer_on')}
         <div class="stage-row"><select name="closed" aria-label="Closed"><option value="">Still open</option><option value="rejected" ${r.closed === 'rejected' ? 'selected' : ''}>Rejected</option><option value="withdrew" ${r.closed === 'withdrew' ? 'selected' : ''}>I withdrew or declined</option></select>
           <input type="date" name="closed_on" value="${esc(r.closed_on || '')}" max="${todayISO()}"></div>
@@ -709,11 +767,24 @@
           <div class="row" style="margin-top:12px"><button class="primary" type="submit">Unlock admin</button><span id="unlock-msg" class="small muted"></span></div>
         </form>`;
     }
-    let m, list; try { [m, list] = await Promise.all([B.adminMetrics(), B.adminList()]); } catch (e) { return `<div class="notice bad">${esc(e.message)}</div>`; }
+    let m, list, sources; try { [m, list, sources] = await Promise.all([B.adminMetrics(), B.adminList(), B.adminSources()]); } catch (e) { return `<div class="notice bad">${esc(e.message)}</div>`; }
     const auto = (S.settings?.auto_approve || 'false') === 'true';
     const flagLabel = { fewer_than_3_applications: '<3 applications', no_rejections: 'no rejections', offer_rate_above_60pct: 'offer rate >60%', stage_without_previous_stage: 'stage order', stage_dates_out_of_order: 'dates out of order', implausible_coffee_chats: 'chats implausible' };
     return `
       <div class="page-h"><h1>Review queue</h1><span class="muted">${m.n_pending} pending · ${m.n_approved} approved · ${m.n_active} people logging now</span></div>
+      <details class="card"><summary><strong>Where sign-ups come from</strong></summary>
+      <p class="small muted">By the <code>?src=</code> tag on the first link each person used. "ref:" means an untagged link from that site; "untagged" means no tag or a typed address.</p>
+      <div class="table-scroll">
+        <table class="lean"><thead><tr><th>Source</th><th class="num">Signed up</th><th class="num">Started a pipeline</th><th class="num">Logging now</th><th class="num">Finished</th><th class="num">Approved</th></tr></thead>
+        <tbody>${sources.map((s) => `<tr><td>${esc(s.source)}</td><td class="num">${s.n_signed_up}</td><td class="num">${s.n_started}</td><td class="num">${s.n_active}</td><td class="num">${s.n_finished}</td><td class="num">${s.n_approved}</td></tr>`).join('') || '<tr><td colspan="6" class="muted">No sign-ups yet.</td></tr>'}</tbody></table>
+      </div>
+      <div class="toolbar">
+        <label class="field">Tag for a new link <input id="src-tag" placeholder="sidechat" value="sidechat"></label>
+        <label class="field" style="flex:1;min-width:240px">Link to post <input id="src-link" readonly></label>
+        <button type="button" id="src-copy" style="align-self:end">Copy link</button>
+      </div>
+      <p class="small muted">Use a different tag for every place you post (sidechat, hfac_groupchat, peer_yourname…). Lowercase letters, digits, - and _ only.</p>
+      </details>
       <div class="toolbar">
         <button id="approve-clean">Approve all unflagged</button>
         <label class="check"><input type="checkbox" id="auto-approve" ${auto ? 'checked' : ''}> Auto-approve unflagged cycles</label>
@@ -735,6 +806,7 @@
           </tr>`).join('') || '<tr><td colspan="8" class="muted">Nothing finished yet.</td></tr>'}</tbody></table>
       </div>
       <p class="small muted">Live pipelines stay private until their owner finishes them. Outreach details and notes are never shown here.</p>
+
       ${B.isDemo ? '<p class="small"><button class="link" id="leave-admin">Leave admin mode</button></p>' : ''}`;
   }
   function wireAdmin() {
@@ -748,6 +820,10 @@
       return;
     }
     const leave = $('#leave-admin'); if (leave) leave.onclick = () => { B.leaveAdmin(); location.hash = '#/'; };
+    const tag = $('#src-tag'), link = $('#src-link');
+    const build = () => { const t = cleanSrc(tag.value.trim().replace(/\s+/g, '_')).replace(/[.:]/g, ''); link.value = location.origin + location.pathname + (t ? '?src=' + t : ''); };
+    tag.oninput = build; build();
+    $('#src-copy').onclick = () => { navigator.clipboard?.writeText(link.value).then(() => { $('#src-copy').textContent = 'Copied'; }, () => link.select()) ?? link.select(); };
     $('#app').onclick = async (e) => {
       const b = e.target.closest('button[data-act]'); if (!b) return;
       b.disabled = true;
@@ -772,13 +848,14 @@
     if (route === '#/status' || route === '#/track') route = '#/pipeline';
     const app = $('#app');
     app.onclick = null; app.onchange = null;
-    const needAuth = ['#/pipeline', '#/submit', '#/dashboard', '#/admin', '#/odds'];
+    const needAuth = ['#/pipeline', '#/submit', '#/admin'];
     if (needAuth.includes(route) && !S.session) { S.next = route; route = '#/login'; }
     if (route === '#/login' && S.session) route = '#/pipeline';
-    if ((route === '#/dashboard' || route === '#/odds') && S.session && !S.status?.has_access) route = '#/pipeline';
     if (route === '#/submit' && S.status?.has_submission) route = '#/pipeline';
-    renderNav(route);
-    if (route === '#/login') { app.innerHTML = viewLogin(); wireLogin(); }
+    const locked = (route === '#/dashboard' || route === '#/odds') && !S.status?.has_access;
+    renderNav(locked ? '#/dashboard' : route);
+    if (locked) app.innerHTML = viewLocked();
+    else if (route === '#/login') { app.innerHTML = viewLogin(); wireLogin(); }
     else if (route === '#/submit') {
       if (!S.firms) S.firms = await B.getFirms();
       app.innerHTML = viewSubmit(); wireSubmit();

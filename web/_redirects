@@ -1,0 +1,4 @@
+# Netlify short links (ignored by other hosts). Typed or DM'd links still count by channel.
+/tt    /?src=tiktok_typed    302
+/dm    /?src=tiktok_dm       302
+/rc    /?src=tiktok_comment  302
