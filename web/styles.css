@@ -174,6 +174,30 @@ section.card { margin: 16px 0; }
 .gate .card { max-width: 440px; text-align: center; box-shadow: 0 20px 40px -20px rgb(0 0 0 / .35); }
 .gate .card h2 { font-size: 20px; }
 
+/* First run: tap to pick */
+fieldset.pick { border: 0; padding: 0; margin: 0 0 18px; min-width: 0; }
+.pick legend { font-weight: 600; font-size: 14px; margin-bottom: 8px; padding: 0; }
+details.pick { margin: 0 0 18px; }
+details.pick > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; font-size: 14px; margin-bottom: 12px; }
+#onboard h2 { margin-top: 26px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { position: relative; display: inline-flex; align-items: center; border: 1px solid var(--base); border-radius: 999px; padding: 6px 13px; font-size: 14px; cursor: pointer; background: var(--surface); user-select: none; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); color: var(--accent-ink); font-weight: 600; }
+.chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* One-tap updates */
+.seg { display: flex; flex-wrap: wrap; gap: 6px; }
+button.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.quick { gap: 6px; }
+#quick-msg { min-height: 1.4em; margin: 6px 0 0; }
+.fcard .fname { all: unset; font-weight: 700; font-size: 14px; cursor: pointer; }
+.fcard .fname:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.fcard .adv { margin-top: 6px; padding: 2px 8px; font-size: 12px; color: var(--accent-ink); }
+dialog details.more { margin-top: 14px; border-top: 1px solid var(--hair); padding-top: 10px; }
+dialog details.more > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; font-size: 14px; }
+dialog details.more[open] > summary { margin-bottom: 10px; }
+
 @media (max-width: 640px) {
   .how { grid-template-columns: 1fr; }
 }

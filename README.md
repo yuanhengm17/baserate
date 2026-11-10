@@ -40,10 +40,13 @@ page, "Enter admin mode" opens the review queue. Nothing is saved anywhere excep
 
 * **Sign in**: school email → a sign-in code arrives by email → type it in. There's no password and no
   link, because school mail scanners (Microsoft Safe Links) open sign-in links first and use them up.
+* **First run**: one screen. Tap the firms you're recruiting for ("Select all" per tier) and answer the
+  two questions the odds use (GPA band, prior internship). The board opens with those firms.
 * **Pipeline** (`#/pipeline`): a one-line summary, what needs attention (next steps, overdue items,
-  firms slower than usual), a board with one card per firm by stage, and the last few actions. Click a
-  firm to update its stages, set a next step, log an action, or keep a link to the application page
-  and private notes (only you can see those; they are never shared or counted). Settings (sharing, profile, finish
+  firms slower than usual), a board with one card per firm by stage, and the last few actions. Each card has a
+  one-tap button for the next stage. Click a firm to set its stage or log today's coffee chat, outreach
+  or event in one tap. Folded below: dates, a next step, a link to the application page, private notes
+  (only you can see those; they are never shared or counted), and a form to log who you contacted. Settings (sharing, profile, finish
   your cycle, delete) are folded away at the bottom.
 * **Add your whole cycle** (`#/submit`): for students who already finished: one table row per firm.
 * **What works** (`#/dashboard`): three sections only:

@@ -48,6 +48,14 @@
         if (error) throw new Error(error.message.includes('one_row_per_firm') ? 'That firm is already in your pipeline.' : error.message);
         return data.id;
       },
+      // several firms at once (first-run setup): one insert
+      async addFirms(ids, others = []) {
+        const rows = [...ids.map((id) => ({ firm_id: id, firm_name_other: null })), ...others.map((n) => ({ firm_id: null, firm_name_other: n }))];
+        if (!rows.length) return;
+        const { data: sess } = await sb.auth.getSession(); const uid = sess?.session?.user?.id; if (!uid) throw new Error('Not signed in.');
+        const { data: s, error: e1 } = await sb.from('submissions').select('id').eq('user_id', uid).single(); if (e1) throw new Error('Start a pipeline first.');
+        ok(await sb.from('submission_firms').insert(rows.map((r) => ({ ...r, submission_id: s.id }))));
+      },
       async saveNotes(firmId, n) { ok(await sb.from('firm_notes').upsert({ submission_firm_id: firmId, application_url: n.application_url || null, notes: n.notes || null, updated_at: new Date().toISOString() })); },
       async deleteFirm(id) { ok(await sb.from('submission_firms').delete().eq('id', id)); },
       async addTouchpoint(t) { ok(await sb.from('touchpoints').insert(t)); },
@@ -267,13 +275,14 @@
     const cycle = S.settings?.current_cycle || 'SA 2027';
     const cycles = [...new Set([p.cycle || cycle, cycle, 'SA 2026', 'SA 2025', 'Full-time 2026', 'Full-time 2025'])];
     const yrs = []; const y0 = new Date().getFullYear(); for (let y = y0 - 1; y <= y0 + 4; y++) yrs.push(y);
-    const yn = (name, label, v) => `<label class="field">${label}<select name="${name}"><option value="false" ${!v ? 'selected' : ''}>No</option><option value="true" ${v ? 'selected' : ''}>Yes</option></select></label>`;
+    // GPA and internship feed the odds, so they start blank rather than on a guess.
+    const yn = (name, label, v, req) => `<label class="field">${label}<select name="${name}" ${req && v == null ? 'required' : ''}>${req && v == null ? '<option value="">Choose</option>' : ''}<option value="false" ${v === false || (!req && !v) ? 'selected' : ''}>No</option><option value="true" ${v ? 'selected' : ''}>Yes</option></select></label>`;
     return `
       <div class="grid">
         <label class="field">Recruiting cycle <select name="cycle">${cycles.map((c) => `<option ${c === (p.cycle || cycle) ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select></label>
         <label class="field">Class year <select name="class_year">${yrs.map((y) => `<option ${y === (p.class_year || y0 + 1) ? 'selected' : ''}>${y}</option>`).join('')}</select></label>
-        <label class="field">GPA band <select name="gpa_band">${GPA_OPTS.map((g) => `<option ${g === (p.gpa_band || '3.7-3.89') ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></label>
-        ${yn('prior_finance_internship', 'Finance internship before?', p.prior_finance_internship)}
+        <label class="field">GPA band <select name="gpa_band" required>${p.gpa_band ? '' : '<option value="">Choose</option>'}${GPA_OPTS.map((g) => `<option ${g === p.gpa_band ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select></label>
+        ${yn('prior_finance_internship', 'Finance internship before?', p.prior_finance_internship, true)}
         ${yn('finance_club_member', 'In a finance club?', p.finance_club_member)}
         ${yn('diversity_program', 'Early-insight or diversity program?', p.diversity_program)}
         ${outcome ? `<label class="field">How did it end? <select name="outcome">${OUTCOMES.map((o) => `<option>${esc(o)}</option>`).join('')}</select></label>` : ''}
@@ -299,7 +308,9 @@
         <label class="field">Your connection <select name="connection">${opts(CONN, null, 'Not sure')}</select></label>
         <label class="field">How you found them <select name="found_via">${opts(FOUND, null, 'Not sure')}</select></label>
       </div>
-      <div class="row small">${kind === 'outreach' ? yn('replied', 'Replied') + yn('led_to_chat', 'Led to a chat') : ''}${yn('led_to_referral', 'Led to a referral')}</div>`;
+      <div class="row small">${kind === 'outreach' ? yn('replied', 'Replied') + yn('led_to_chat', 'Led to a chat') : ''}${yn('led_to_referral', 'Led to a referral')}</div>
+      ${S.status && !S.status.share_outreach ? `<label class="check consent"><input type="checkbox" name="share_outreach">
+        <span>Count contacts like this one (role and connection, never names) in the anonymous reply rates. <span class="muted">Optional; you can turn it off in Settings.</span></span></label>` : ''}`;
   }
   const readPerson = (form, kind) => {
     const v = (n) => form.querySelector(`[name=${n}]`);
@@ -313,6 +324,79 @@
   const STAGES = ['Networking', 'Applied', 'First round', 'Superday', 'Offer', 'Closed'];
   const stageOf = (r) => (r.closed ? 'Closed' : r.offer ? 'Offer' : r.superday ? 'Superday' : r.first_round ? 'First round' : r.applied ? 'Applied' : 'Networking');
   const awaiting = (r) => (r.closed || r.offer ? null : r.superday ? ['superday', r.superday_on] : r.first_round ? ['first round', r.first_round_on] : r.applied ? ['applied', r.applied_on] : null);
+
+  // One-tap stage changes. Earlier stages count as reached, later ones are cleared, the new
+  // stage is dated today unless it already has a date, and a next step it covers is cleared.
+  const ORDER = ['applied', 'first_round', 'superday', 'offer'];
+  const PROGRESS = [['networking', 'Networking'], ['applied', 'Applied'], ['first_round', 'First round'], ['superday', 'Superday'], ['offer', 'Offer']];
+  const ADVANCE = { Networking: ['applied', 'Mark applied'], Applied: ['first_round', 'Got a first round'], 'First round': ['superday', 'Got a superday'], Superday: ['offer', 'Got an offer'] };
+  const NEXT_STAGE = { deadline: 'applied', first_round: 'first_round', superday: 'superday', decision: 'offer' };
+  const QUICK = { coffee_chat: 'Coffee chat', outreach: 'Reached out', info_session: 'Info session', recruiting_event: 'Firm event', club_event: 'Club event' };
+  const progressOf = (r) => [...ORDER].reverse().find((s) => r[s]) || 'networking';
+  function stagePatch(r, stage) {
+    const idx = ORDER.indexOf(stage);
+    const row = { id: r.id };
+    ORDER.forEach((s, i) => { row[s] = i <= idx; row[s + '_on'] = i > idx ? null : r[s + '_on'] || (i === idx ? todayISO() : null); });
+    if (!row.offer) row.accepted = false;
+    if (row.offer && r.closed === 'rejected') { row.closed = null; row.closed_on = null; }
+    if (NEXT_STAGE[r.next_kind] && ORDER.indexOf(NEXT_STAGE[r.next_kind]) <= idx) { row.next_kind = null; row.next_on = null; }
+    return row;
+  }
+  function closePatch(r, how) {
+    const on = r.closed !== how;
+    return { id: r.id, closed: on ? how : null, closed_on: on ? todayISO() : null, ...(on ? { next_kind: null, next_on: null } : {}) };
+  }
+
+  // First run: pick firms and answer the two questions the odds use, on one screen.
+  function viewOnboard() {
+    const group = (t, title) => {
+      const fs = S.firms.filter((f) => f.tier === t); if (!fs.length) return '';
+      return `<fieldset class="pick" data-tier="${esc(t)}"><legend>${esc(title)} <button type="button" class="link small" data-all="${esc(t)}">Select all</button></legend>
+        <div class="chips">${fs.map((f) => `<label class="chip"><input type="checkbox" name="firm" value="${f.id}"> ${esc(f.name)}</label>`).join('')}</div></fieldset>`;
+    };
+    const chips = (name, values) => `<div class="chips">${values.map(([v, l], i) => `<label class="chip"><input type="radio" name="${name}" value="${esc(v)}" ${i ? '' : 'required'}> ${esc(l)}</label>`).join('')}</div>`;
+    return `
+      <h1>Which firms are you recruiting for?</h1>
+      <p class="lead">Tap every firm you're talking to or plan to apply to. You can add more later.</p>
+      <form id="onboard">
+        ${group('Bulge Bracket', 'Bulge bracket')}${group('Elite Boutique', 'Elite boutique')}
+        <details class="pick"><summary>Middle market and other firms</summary>
+          ${group('Middle Market', 'Middle market')}${group('Other', 'Other')}
+          <label class="field">Firm not listed? <input type="text" name="other" placeholder="Firm names, separated by commas"></label>
+        </details>
+        <h2>Two questions for your odds</h2>
+        <p class="small muted">Used only to compare you with similar students. Never shown with your name.</p>
+        <fieldset class="pick"><legend>Your GPA</legend>${chips('gpa_band', GPA_OPTS.map((g) => [g, g]))}</fieldset>
+        <fieldset class="pick"><legend>Had a finance internship before?</legend>${chips('prior_finance_internship', [['false', 'No'], ['true', 'Yes']])}</fieldset>
+        <div class="row"><button class="primary" type="submit" id="onboard-go">Start tracking</button><span id="onboard-msg" class="small muted"></span></div>
+      </form>
+      <p class="small muted">Already done recruiting? <a href="#/submit">Add your whole cycle at once</a>.</p>`;
+  }
+  function wireOnboard(form) {
+    const go = $('#onboard-go', form);
+    const label = () => { const n = form.querySelectorAll('input[name=firm]:checked').length; go.textContent = n ? `Start tracking ${n} firm${n === 1 ? '' : 's'}` : 'Start tracking'; };
+    form.onchange = label;
+    form.onclick = (e) => {
+      const b = e.target.closest('[data-all]'); if (!b) return;
+      const boxes = [...form.querySelectorAll(`fieldset[data-tier="${b.dataset.all}"] input[name=firm]`)];
+      const on = boxes.some((x) => !x.checked);
+      boxes.forEach((x) => { x.checked = on; }); b.textContent = on ? 'Clear' : 'Select all'; label();
+    };
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const fd = new FormData(form);
+      const ids = fd.getAll('firm').map(Number);
+      const others = String(fd.get('other') || '').split(',').map((x) => x.trim()).filter(Boolean);
+      go.disabled = true; $('#onboard-msg').textContent = 'Setting up…';
+      try {
+        await B.upsertPipeline({ cycle: S.settings?.current_cycle || 'SA 2027', class_year: new Date().getFullYear() + 1, gpa_band: fd.get('gpa_band'),
+          prior_finance_internship: fd.get('prior_finance_internship') === 'true', finance_club_member: false, diversity_program: false, share_outreach: false });
+        await B.addFirms(ids, others);
+        track('signup_complete', { via: 'onboarding', firms: ids.length + others.length });
+        await render();
+      } catch (err) { $('#onboard-msg').textContent = err.message; go.disabled = false; }
+    };
+  }
 
   function attentionItems(rows, timing) {
     const typical = Object.fromEntries((timing || []).filter((t) => !t.is_overall).map((t) => [t.label, t.med_days_to_first_round]));
@@ -336,16 +420,7 @@
 
   async function viewPipeline() {
     const st = S.status || {};
-    if (!st.has_submission) {
-      return `
-        <h1>Start your pipeline</h1>
-        <p class="lead">A few questions so we can compare you with similar students. Never shown with your name.</p>
-        <form id="pipeline-setup" class="card">
-          ${profileFields({})}
-          <div class="row" style="margin-top:14px"><button class="primary" type="submit">Start my pipeline</button><span id="setup-msg" class="small muted"></span></div>
-        </form>
-        <p class="small muted">Already done recruiting? <a href="#/submit">Add your whole cycle at once</a>.</p>`;
-    }
+    if (!st.has_submission) return viewOnboard();
     const [rows, touches, timing, odds] = await Promise.all([B.myPipeline(), B.myTouchpoints(),
       st.has_access ? B.timing().catch(() => []) : [], st.has_access ? B.myOdds().catch(() => []) : []]);
     S.pipe = { rows, touches, odds: new Map(odds.filter((o) => o.rate != null).map((o) => [o.firm_id, o])) };
@@ -367,7 +442,8 @@
         : r.closed ? `<span class="muted">${r.closed === 'rejected' ? 'rejected' : 'withdrew'}</span>`
         : r.n_outreach ? `<span class="muted">${r.n_replied}/${r.n_outreach} replied</span>` : '';
       const extras = [r.application_url ? `<a href="${esc(r.application_url)}" target="_blank" rel="noopener noreferrer">application ↗</a>` : '', r.notes ? '<span class="muted">notes</span>' : ''].filter(Boolean).join(' · ');
-      return `<div class="fcard" data-open-firm="${r.id}" role="button" tabindex="0"><strong>${esc(r.label)}</strong>${sub}${extras ? `<span class="extras">${extras}</span>` : ''}</div>`;
+      const adv = live && ADVANCE[stageOf(r)];
+      return `<div class="fcard" data-open-firm="${r.id}"><button type="button" class="fname" data-open-firm="${r.id}">${esc(r.label)}</button>${sub}${extras ? `<span class="extras">${extras}</span>` : ''}${adv ? `<button type="button" class="adv" data-advance="${r.id}">${adv[1]}</button>` : ''}</div>`;
     };
     const recent = touches.slice(0, 6);
     return `
@@ -422,10 +498,21 @@
     const tps = S.pipe.touches.filter((t) => t.submission_firm_id === r.id);
     const stage = (name, label, dateName) => `<div class="stage-row"><label class="check"><input type="checkbox" name="${name}" ${r[name] ? 'checked' : ''}> ${label}</label>${dateName ? `<input type="date" name="${dateName}" value="${esc(r[dateName] || '')}" max="${todayISO()}">` : ''}</div>`;
     const o = S.pipe.odds.get(r.firm_id);
+    const prog = progressOf(r);
+    const toggle = (how, label) => `<button type="button" class="small ${r.closed === how ? 'on' : ''}" data-close="${how}" aria-pressed="${r.closed === how}" ${how === 'rejected' && r.offer ? 'disabled' : ''}>${label}</button>`;
     return `
-      <form id="firm-form" method="dialog">
-        <div class="dlg-h"><h2>${esc(r.label)}</h2><button class="link" value="cancel" formnovalidate aria-label="Close">✕</button></div>
-        ${o ? `<p class="small">First-round rate here: <strong>${fmtPct(o.rate)}</strong> <span class="muted">(based on ${esc(o.basis)}; your average across firms is ${fmtPct(o.avg_rate)})</span></p>` : ''}
+      <div class="dlg-h"><h2>${esc(r.label)}</h2><button type="button" class="link" id="close-firm" aria-label="Close">✕</button></div>
+      ${o ? `<p class="small">First-round rate here: <strong>${fmtPct(o.rate)}</strong> <span class="muted">(based on ${esc(o.basis)}; your average across firms is ${fmtPct(o.avg_rate)})</span></p>` : ''}
+      <h3>Where you are</h3>
+      <div class="seg" role="group" aria-label="Stage">${PROGRESS.map(([k, l]) => `<button type="button" class="${k === prog ? 'on' : ''}" data-stage="${k}" aria-pressed="${k === prog}">${l}</button>`).join('')}</div>
+      <div class="row small" style="margin-top:8px">${toggle('rejected', 'Rejected')}${toggle('withdrew', 'I withdrew')}
+        ${r.next_on ? `<span class="next">Next: ${esc(NEXT[r.next_kind] || 'step')} ${fmtDate(r.next_on)}</span>` : ''}</div>
+      <h3>Log what you did today</h3>
+      <div class="row quick">${Object.entries(QUICK).map(([k, l]) => `<button type="button" class="small" data-quick="${k}">${l}</button>`).join('')}</div>
+      <p id="quick-msg" class="small muted" role="status"></p>
+      ${tps.length ? `<h3>Actions here</h3><ul class="tp-list">${tps.map((t) => `<li><span class="small muted">${t.occurred_on ? fmtDate(t.occurred_on) : '—'}</span> ${esc(KIND[t.kind])}${t.replied ? ' · replied' : ''}${t.led_to_referral ? ' · referral' : ''}</li>`).join('')}</ul>` : ''}
+      <details class="more"><summary>Dates, next step, link and notes</summary>
+      <form id="firm-form">
         ${stage('applied', 'Applied', 'applied_on')}${stage('first_round', 'First round', 'first_round_on')}${stage('superday', 'Superday', 'superday_on')}${stage('offer', 'Offer', 'offer_on')}
         <div class="stage-row"><select name="closed" aria-label="Closed"><option value="">Still open</option><option value="rejected" ${r.closed === 'rejected' ? 'selected' : ''}>Rejected</option><option value="withdrew" ${r.closed === 'withdrew' ? 'selected' : ''}>I withdrew or declined</option></select>
           <input type="date" name="closed_on" value="${esc(r.closed_on || '')}" max="${todayISO()}"></div>
@@ -440,10 +527,16 @@
           <label class="check"><input type="checkbox" name="referral" ${r.referral ? 'checked' : ''}> I got a referral here</label>
           <p><button type="button" class="link danger" id="rm-firm">Remove this firm</button></p>
         </details>
-        <div class="row" style="margin-top:12px"><button class="primary" type="submit" value="save">Save</button><span id="firm-msg" class="small muted"></span></div>
-      </form>
-      ${tps.length ? `<h3>Actions here</h3><ul class="tp-list">${tps.map((t) => `<li><span class="small muted">${t.occurred_on ? fmtDate(t.occurred_on) : '—'}</span> ${esc(KIND[t.kind])}${t.replied ? ' · replied' : ''}${t.led_to_referral ? ' · referral' : ''}</li>`).join('')}</ul>` : ''}
-      ${actionForm(r.id)}`;
+        <div class="row" style="margin-top:12px"><button class="primary" type="submit">Save</button><span id="firm-msg" class="small muted"></span></div>
+      </form></details>
+      <details class="more"><summary>Log with details: who, and on what date</summary>${actionForm(r.id)}</details>`;
+  }
+
+  // Open (or, after a one-tap change re-rendered the page, reopen) a firm's window.
+  function openFirmDialog(id, note) {
+    const r = S.pipe?.rows.find((x) => x.id === id), d = $('#firm-dlg'); if (!r || !d) return;
+    d.innerHTML = firmDialog(r); wireFirmDialog(d, r); if (!d.open) d.showModal();
+    if (note) $('#quick-msg', d).textContent = note;
   }
 
   function actionForm(firmId) {
@@ -459,7 +552,7 @@
         <div class="row"><button class="primary" type="submit">Log it</button><span class="small muted">Describe people by role only; names are never stored.</span><span id="action-msg" class="small muted"></span></div>
       </form>`;
   }
-  function wireActionForm(dlg) {
+  function wireActionForm(dlg, reopenId) {
     const f = $('#action-form', dlg); if (!f) return;
     const kind = $('select[name=kind]', f), box = $('#person-box', f);
     kind.onchange = () => { box.innerHTML = personFields(kind.value); };
@@ -467,22 +560,18 @@
       e.preventDefault();
       const fd = new FormData(f);
       try {
+        if (fd.get('share_outreach')) await B.setShareOutreach(true);
         await B.addTouchpoint({ submission_firm_id: +fd.get('sfid'), kind: fd.get('kind'), occurred_on: fd.get('occurred_on') || null, ...readPerson(f, fd.get('kind')) });
         track('contribute', { firm: S.pipe.rows.find((x) => x.id === +fd.get('sfid'))?.label, kind: fd.get('kind') });
         dlg.close(); await render();
+        if (reopenId) openFirmDialog(reopenId, `Logged: ${KIND[fd.get('kind')]}.`);
       } catch (err) { $('#action-msg', f).textContent = err.message; }
     };
   }
 
   function wirePipeline() {
-    const setup = $('#pipeline-setup');
-    if (setup) {
-      setup.onsubmit = async (e) => {
-        e.preventDefault();
-        try { await B.upsertPipeline(readProfile(setup)); track('signup_complete', { via: 'pipeline' }); await render(); } catch (err) { $('#setup-msg').textContent = err.message; }
-      };
-      return;
-    }
+    const onboard = $('#onboard');
+    if (onboard) { wireOnboard(onboard); return; }
     const af = $('#add-firm');
     if (af) {
       const sel = $('select[name=firm]', af), other = $('input[name=other]', af);
@@ -509,17 +598,23 @@
       try { await B.finalize(new FormData(ff).get('outcome')); track('finalize', { outcome: new FormData(ff).get('outcome') }); await render(); } catch (err) { $('#finalize-msg').textContent = err.message; }
     };
     const live = S.status?.status === 'in_progress';
-    const openFirm = (o) => {
-      const r = S.pipe.rows.find((x) => String(x.id) === o.dataset.openFirm); if (!r) return;
-      const d = $('#firm-dlg'); d.innerHTML = firmDialog(r); wireFirmDialog(d, r); d.showModal();
-      track('firm_open', { firm: r.label });
-    };
-    $('#app').onkeydown = (e) => { const o = e.target.closest('.fcard[data-open-firm]'); if (o && live && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openFirm(o); } };
     $('#app').onclick = async (e) => {
       if (e.target.closest('a')) return;
+      const adv = e.target.closest('[data-advance]');
+      if (adv && live) {
+        const r = S.pipe.rows.find((x) => x.id === +adv.dataset.advance); if (!r) return;
+        adv.disabled = true;
+        try {
+          const row = stagePatch(r, ADVANCE[stageOf(r)][0]);
+          await B.saveFirm(row); track('tracker_status', { firm: r.label, stage: stageOf({ ...r, ...row }), via: 'card' }); await render();
+        } catch (err) { adv.disabled = false; alert(err.message); }
+        return;
+      }
       const o = e.target.closest('[data-open-firm]');
       if (o && live) {
-        openFirm(o); return;
+        openFirmDialog(+o.dataset.openFirm);
+        track('firm_open', { firm: S.pipe.rows.find((x) => x.id === +o.dataset.openFirm)?.label });
+        return;
       }
       const del = e.target.closest('[data-del-tp]');
       if (del) { del.disabled = true; try { await B.deleteTouchpoint(+del.dataset.delTp); await render(); } catch (err) { del.disabled = false; alert(err.message); } }
@@ -531,6 +626,24 @@
   }
 
   function wireFirmDialog(dlg, r) {
+    $('#close-firm', dlg).onclick = () => dlg.close();
+    // one-tap changes save at once, then the page and this window redraw with the result
+    const tap = async (save, event, note) => {
+      dlg.querySelectorAll('[data-stage], [data-close], [data-quick]').forEach((b) => { b.disabled = true; });
+      try { await save(); track(...event); await render(); openFirmDialog(r.id, note); }
+      catch (err) { openFirmDialog(r.id, err.message); }
+    };
+    dlg.querySelectorAll('[data-stage]').forEach((b) => {
+      b.onclick = () => tap(() => B.saveFirm(stagePatch(r, b.dataset.stage)), ['tracker_status', { firm: r.label, stage: b.textContent, via: 'dialog' }], `Saved: ${b.textContent}.`);
+    });
+    dlg.querySelectorAll('[data-close]').forEach((b) => {
+      b.onclick = () => tap(() => B.saveFirm(closePatch(r, b.dataset.close)), ['tracker_status', { firm: r.label, stage: r.closed === b.dataset.close ? 'reopened' : b.dataset.close, via: 'dialog' }],
+        r.closed === b.dataset.close ? 'Saved: still open.' : `Saved: ${b.textContent.toLowerCase()}.`);
+    });
+    dlg.querySelectorAll('[data-quick]').forEach((b) => {
+      b.onclick = () => tap(() => B.addTouchpoint({ submission_firm_id: r.id, kind: b.dataset.quick, occurred_on: todayISO() }),
+        ['contribute', { firm: r.label, kind: b.dataset.quick, via: 'quick' }], `Logged: ${b.textContent}, today.`);
+    });
     const f = $('#firm-form', dlg);
     // stage cascade: checking a stage checks the earlier ones; unchecking clears the later ones
     const order = ['applied', 'first_round', 'superday', 'offer', 'accepted'];
@@ -540,7 +653,6 @@
     });
     f.onsubmit = async (e) => {
       e.preventDefault();
-      if (e.submitter?.value === 'cancel') { dlg.close(); return; }
       const v = (n) => f.elements[n].value || null, c = (n) => f.elements[n].checked;
       const row = { id: r.id, applied: c('applied'), first_round: c('first_round'), superday: c('superday'), offer: c('offer'), accepted: c('accepted'),
         applied_on: v('applied_on'), first_round_on: v('first_round_on'), superday_on: v('superday_on'), offer_on: v('offer_on'),
@@ -563,7 +675,7 @@
       if (!confirm(`Remove ${r.label} and every action logged there?`)) return;
       await B.deleteFirm(r.id); track('tracker_remove', { firm: r.label }); dlg.close(); await render();
     };
-    wireActionForm(dlg);
+    wireActionForm(dlg, r.id);
   }
 
   // ------------------------------------------------------------------ contribute a finished cycle

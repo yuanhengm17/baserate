@@ -303,6 +303,9 @@
         m.touches.push({ id: nextId++, submission_firm_id: id, kind, occurred_on: d(ago), contact_level, connection, found_via, replied, led_to_chat, led_to_referral }));
     });
   }
+  // ids for my rows: increasing even when several are made in the same millisecond
+  let lastId = 0;
+  const freshId = () => (lastId = Math.max(Date.now(), lastId + 1));
   const emptyFirm = { referral: false, applied: false, first_round: false, superday: false, offer: false, accepted: false, closed: null, applied_on: null, first_round_on: null, superday_on: null, offer_on: null, closed_on: null, next_on: null, next_kind: null };
 
   window.DemoBackend = {
@@ -345,13 +348,19 @@
       const m = needLive();
       const i = row.id ? m.firms.findIndex((f) => f.id === row.id) : -1;
       if (row.id && i < 0) throw new Error('Unknown firm.');
-      const next = i >= 0 ? { ...m.firms[i], ...row } : { ...emptyFirm, ...row, id: Date.now() + Math.floor(Math.random() * 1000) };
+      const next = i >= 0 ? { ...m.firms[i], ...row } : { ...emptyFirm, ...row, id: freshId() };
       if (next.firm_id != null && m.firms.some((f) => f.firm_id === next.firm_id && f.id !== next.id)) throw new Error('That firm is already in your pipeline.');
       if (next.firm_id == null && !(next.firm_name_other || '').trim()) throw new Error('Type the firm name.');
       if (next.offer && next.closed === 'rejected') throw new Error('A firm cannot be both an offer and a rejection.');
       if (i >= 0) m.firms[i] = next; else m.firms.push(next);
       const id = next.id;
       save(m); return id;
+    },
+    // mirrors the Supabase backend's single insert: all or nothing
+    async addFirms(ids, others = []) {
+      const m = needLive(); const before = JSON.stringify(m.firms);
+      try { for (const id of ids) await this.saveFirm({ firm_id: id, firm_name_other: null }); for (const n of others) await this.saveFirm({ firm_id: null, firm_name_other: n }); }
+      catch (err) { const back = me(); back.firms = JSON.parse(before); setMe(back); throw err; }
     },
     // private notes and link: owner only, editable at any status (mirrors firm_notes)
     async saveNotes(firmId, { application_url, notes }) {
@@ -364,7 +373,7 @@
     async addTouchpoint(t) {
       const m = needLive();
       if (!m.firms.some((f) => f.id === t.submission_firm_id)) throw new Error('Unknown firm.');
-      m.touches.push({ contact_level: null, connection: null, found_via: null, replied: null, led_to_chat: null, led_to_referral: null, occurred_on: null, ...t, id: Date.now() + Math.floor(Math.random() * 1000) });
+      m.touches.push({ contact_level: null, connection: null, found_via: null, replied: null, led_to_chat: null, led_to_referral: null, occurred_on: null, ...t, id: freshId() });
       save(m);
     },
     async updateTouchpoint(id, patch) { const m = needLive(); const t = m.touches.find((x) => x.id === id); if (t) Object.assign(t, patch); save(m); },
