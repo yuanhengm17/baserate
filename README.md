@@ -57,10 +57,12 @@ page, "Enter admin mode" opens the review queue. Nothing is saved anywhere excep
     happen).
 * **Locked preview.** Without access, "What works" and "My odds" show a blurred placeholder (fixed
   text, not data) with one step to unlock: sign up, start a pipeline, log something, or wait for review.
-* **My odds** (`#/odds`): the firms where students with your profile reach first rounds at twice the
-  usual rate, with the best kind of contact to try there and a button to add the firm to your
-  pipeline. The full list is folded away underneath. The same rate shows when you open a firm on
-  your pipeline.
+* **My odds** (`#/odds`): your own firms first, each with its first-round rate. Below that, firms
+  you haven't added where students with your profile reach first rounds at twice the usual rate,
+  with the best kind of contact to try there and a button to add the firm. Every other firm is
+  folded away under "Other firms", so nobody sees odds for firms they chose to skip unless they
+  open it. With no finished cycles yet, the page says so in one sentence. The same rate shows when
+  you open a firm on your pipeline.
 
 ## Privacy and access rules
 

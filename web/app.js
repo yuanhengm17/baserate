@@ -862,26 +862,30 @@
   async function viewOdds() {
     if (!S.status?.has_submission) return `<h1>My odds</h1><div class="notice">Start your pipeline first so we know who to compare you with.</div><p><a class="btn primary" href="#/pipeline">Start my pipeline</a></p>`;
     const [rows, outreach, mine] = await Promise.all([B.myOdds(), B.outreach(), B.myPipeline()]);
-    if (!rows.length) return `<h1>My odds</h1><div class="notice">Not enough finished cycles yet to compute odds.</div>`;
     const st = S.status, live = st.status === 'in_progress';
+    const avg = rows[0]?.avg_rate;
+    const head = `<div class="page-h"><h1>My odds</h1><span class="muted">${esc(st.gpa_band)} · ${st.prior_finance_internship ? 'prior internship' : 'no prior internship'}${avg != null ? ` · usual first-round rate ${fmtPct(avg)}` : ''}</span></div>`;
+    if (!rows.some((r) => r.rate != null)) return `${head}<div class="notice">Not enough finished cycles yet. A firm's rate shows once at least ${kAnon()} people who finished recruiting applied there; yours fill in as they do.</div>`;
+    // Your own firms come first; the rest stay folded so nobody has to look at odds for firms they skipped.
     const inPipe = new Set(mine.map((r) => r.firm_id));
-    const avg = rows[0].avg_rate, his = rows.filter((r) => r.is_high);
+    const yours = rows.filter((r) => inPipe.has(r.firm_id)), others = rows.filter((r) => !inPipe.has(r.firm_id));
+    const his = others.filter((r) => r.is_high);
     const bestReply = (firmId) => {
       const b = outreach.filter((o) => o.firm_id === firmId && o.dimension === 'connection').sort((a, c) => c.pct_replied - a.pct_replied)[0];
       return b ? `Best replies: ${esc(CONN[b.value].toLowerCase())}, ${fmtPct(b.pct_replied)}` : '';
     };
+    const table = (rs) => `<table class="lean"><thead><tr><th>Firm</th><th class="num">First-round rate</th><th>Based on</th></tr></thead>
+      <tbody>${rs.map((r) => `<tr><td>${esc(r.label)}${r.is_high ? ' <span class="pill approved">twice the usual</span>' : ''}</td><td class="num">${fmtPct(r.rate)}</td><td class="small muted">${esc(r.basis)}</td></tr>`).join('')}</tbody></table>`;
     return `
-      <div class="page-h"><h1>My odds</h1><span class="muted">${esc(st.gpa_band)} · ${st.prior_finance_internship ? 'prior internship' : 'no prior internship'} · usual first-round rate ${fmtPct(avg)}</span></div>
-      ${his.length ? `<p>Firms where students like you reached first rounds at <strong>twice the usual rate</strong> or more:</p>
+      ${head}
+      <h2>Your firms</h2>
+      ${yours.length ? table(yours) : `<div class="notice">Add firms to your pipeline to see your odds at each one.</div>`}
+      ${his.length ? `<h2 class="sec">Worth a look</h2><p>Firms you haven't added where students like you reached first rounds at <strong>twice the usual rate</strong> or more:</p>
       <div class="odds">${his.map((h) => `<div class="card odd">
         <div><strong>${esc(h.label)}</strong><div class="small muted">${bestReply(h.firm_id)}</div></div>
         <div class="big">${fmtPct(h.rate)}</div>
-        <div>${inPipe.has(h.firm_id) ? '<span class="pill approved">in pipeline</span>' : live ? `<button class="small" data-add-firm="${h.firm_id}">+ Add</button>` : ''}</div></div>`).join('')}</div>`
-        : '<div class="notice">No firm stands out for your profile yet; rates are close to the usual one everywhere.</div>'}
-      <details class="settings"><summary>All firms</summary>
-        <table class="lean"><thead><tr><th>Firm</th><th class="num">First-round rate</th><th>Based on</th></tr></thead>
-          <tbody>${rows.map((r) => `<tr><td>${esc(r.label)}${inPipe.has(r.firm_id) ? ' <span class="pill">in pipeline</span>' : ''}</td><td class="num">${fmtPct(r.rate)}</td><td class="small muted">${esc(r.basis)}</td></tr>`).join('')}</tbody></table>
-      </details>`;
+        <div>${live ? `<button class="small" data-add-firm="${h.firm_id}">+ Add</button>` : ''}</div></div>`).join('')}</div>` : ''}
+      ${others.length ? `<details class="settings"><summary>Other firms</summary>${table(others)}</details>` : ''}`;
   }
 
   // ------------------------------------------------------------------ admin

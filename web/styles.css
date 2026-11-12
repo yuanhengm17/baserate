@@ -106,7 +106,7 @@ textarea { font: inherit; padding: 8px 10px; border: 1px solid var(--base); bord
 .actions { display: grid; }
 .act { display: grid; grid-template-columns: 56px 1fr auto auto; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--hair); font-size: 14px; }
 h2 + .actions { margin-top: 4px; }
-.board + h2, .attention + h2 { margin-top: 26px; }
+.board + h2, .attention + h2, h2.sec { margin-top: 26px; }
 #app > h2 { margin-top: 26px; }
 details.settings { margin-top: 28px; border-top: 1px solid var(--hair); padding-top: 12px; }
 details.settings > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
