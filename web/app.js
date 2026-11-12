@@ -865,7 +865,7 @@
     const st = S.status, live = st.status === 'in_progress';
     const avg = rows[0]?.avg_rate;
     const head = `<div class="page-h"><h1>My odds</h1><span class="muted">${esc(st.gpa_band)} · ${st.prior_finance_internship ? 'prior internship' : 'no prior internship'}${avg != null ? ` · usual first-round rate ${fmtPct(avg)}` : ''}</span></div>`;
-    if (!rows.some((r) => r.rate != null)) return `${head}<div class="notice">Not enough finished cycles yet. A firm's rate shows once at least ${kAnon()} people who finished recruiting applied there; yours fill in as they do.</div>`;
+    const empty = !rows.some((r) => r.rate != null);
     // Your own firms come first; the rest stay folded so nobody has to look at odds for firms they skipped.
     const inPipe = new Set(mine.map((r) => r.firm_id));
     const yours = rows.filter((r) => inPipe.has(r.firm_id)), others = rows.filter((r) => !inPipe.has(r.firm_id));
@@ -878,7 +878,8 @@
       <tbody>${rs.map((r) => `<tr><td>${esc(r.label)}${r.is_high ? ' <span class="pill approved">twice the usual</span>' : ''}</td><td class="num">${fmtPct(r.rate)}</td><td class="small muted">${esc(r.basis)}</td></tr>`).join('')}</tbody></table>`;
     return `
       ${head}
-      <h2>Your firms</h2>
+      ${empty ? `<div class="notice">Not enough finished cycles yet. A firm's rate shows once at least ${kAnon()} people who finished recruiting applied there; yours fill in as they do.</div>` : ''}
+      <h2${empty ? ' class="sec"' : ''}>Your firms</h2>
       ${yours.length ? table(yours) : `<div class="notice">Add firms to your pipeline to see your odds at each one.</div>`}
       ${his.length ? `<h2 class="sec">Worth a look</h2><p>Firms you haven't added where students like you reached first rounds at <strong>twice the usual rate</strong> or more:</p>
       <div class="odds">${his.map((h) => `<div class="card odd">

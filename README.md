@@ -61,7 +61,7 @@ page, "Enter admin mode" opens the review queue. Nothing is saved anywhere excep
   you haven't added where students with your profile reach first rounds at twice the usual rate,
   with the best kind of contact to try there and a button to add the firm. Every other firm is
   folded away under "Other firms", so nobody sees odds for firms they chose to skip unless they
-  open it. With no finished cycles yet, the page says so in one sentence. The same rate shows when
+  open it. With no finished cycles yet, a note says so above your firms. The same rate shows when
   you open a firm on your pipeline.
 
 ## Privacy and access rules
